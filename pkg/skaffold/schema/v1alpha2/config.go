@@ -18,10 +18,13 @@ package v1alpha2
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/constants"
+	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/util"
 	homedir "github.com/mitchellh/go-homedir"
 
+	cbiv1alpha1 "github.com/containerbuilding/cbi/pkg/apis/cbi/v1alpha1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
@@ -73,6 +76,7 @@ type BuildType struct {
 	LocalBuild       *LocalBuild       `yaml:"local"`
 	GoogleCloudBuild *GoogleCloudBuild `yaml:"googleCloudBuild"`
 	KanikoBuild      *KanikoBuild      `yaml:"kaniko"`
+	CBIBuild         *CBIBuild         `yaml:"cbi"`
 }
 
 // LocalBuild contains the fields needed to do a build on the local docker daemon
@@ -92,6 +96,118 @@ type GoogleCloudBuild struct {
 type KanikoBuild struct {
 	GCSBucket  string `yaml:"gcsBucket,omitempty"`
 	PullSecret string `yaml:"pullSecret,omitempty"`
+}
+
+// CBIBuild contains the fields needed to do a on-cluster build using
+// CBI, Container Builder Interface ( https://github.com/containerbuilding/cbi ).
+//
+// The build context is uploaded to an on-cluster temporary nginx server using
+// `kubectl cp`, and passed to a CBI plugin as an HTTP context.
+type CBIBuild struct {
+	//BuildJobTemplate is used as a template for CBI BuildJob.
+	// To support multiple versions, the field is defined as yaml.MapSlice.
+	// The underlying template object is accessible via GetBuildJobTemplate.
+	//
+	// At least BuildJob.Spec.Registry.SecretRef.Name should be set.
+	// (name of docker-registry secret)
+	//
+	// Other fields are optional.
+	//
+	// The following fields will be fulfilled on
+	// CBIBuildJobTemplate.Fulfill() if empty:
+	//  * BuildJob.APIVersion: to "cbi.containerbuilding.github.io/v1alpha1"
+	//  * BuildJob.Kind: to "BuildJob"
+	//  * BuildJob.Metadata.Name: to a random string
+	//  * BuildJob.Spec.Language.Kind: to "Dockerfile"
+	//
+	// The following fields will be always overrided on
+	// CBIBuildJobTemplate.Fulfill() and should not be set manually:
+	//  * BuildJob.Spec.Registry.Target: to skaffold Artifact.ImageName
+	//  * BuildJob.Spec.Registry.Push: to true
+	//  * BuildJob.Spec.Registry.Context: to an on-cluster HTTP context
+	BuildJobTemplate yaml.MapSlice `yaml:"buildJobTemplate,omitempty"`
+}
+
+// GetBuildJobTemplate returns CBIBuildJobTemplate for p.BuildJobTemplate
+func (p *CBIBuild) GetBuildJobTemplate() (CBIBuildJobTemplate, error) {
+	b, err := yaml.Marshal(p.BuildJobTemplate)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range p.BuildJobTemplate {
+		k, ok := item.Key.(string)
+		if !ok {
+			continue
+		}
+		if k != "apiVersion" {
+			continue
+		}
+		v, ok := item.Value.(string)
+		if !ok {
+			return nil, errors.Errorf("got non-string apiVersion: %v", v)
+		}
+		switch v {
+		case cbiv1alpha1.SchemeGroupVersion.String():
+			goto v1alpha1
+		default:
+			return nil, errors.Errorf("expected %q, got %q", cbiv1alpha1.SchemeGroupVersion.String(), v)
+		}
+	}
+	// default
+v1alpha1:
+	var bj cbiv1alpha1.BuildJob
+	if err := yaml.UnmarshalStrict(b, &bj); err != nil {
+		return nil, err
+	}
+	return &cbiBuildJobTemplateV1Alpha1{bj: bj}, nil
+}
+
+// CBIBuildJobTemplate provides the underlying data of CBIBuild.BuildJobTemplate
+type CBIBuildJobTemplate interface {
+	// APIVersion returns "cbi.containerbuilding.github.io/vNalphaM" (N and M are placeholders)
+	APIVersion() string
+	// BuildJob returns *cbivNalphaM.BuildJob
+	BuildJob() interface{}
+	// Fulfill fulfills the template
+	Fulfill(imageName, httpContextURL string) error
+}
+
+type cbiBuildJobTemplateV1Alpha1 struct {
+	bj cbiv1alpha1.BuildJob
+}
+
+// APIVersion returns "cbi.containerbuilding.github.io/v1alpha1"
+func (t *cbiBuildJobTemplateV1Alpha1) APIVersion() string {
+	return cbiv1alpha1.SchemeGroupVersion.String()
+}
+
+// BuildJob returns *cbiv1alpha1.BuildJob
+func (t *cbiBuildJobTemplateV1Alpha1) BuildJob() interface{} {
+	return &t.bj
+}
+
+// Fulfill fulfills the template.
+func (t *cbiBuildJobTemplateV1Alpha1) Fulfill(imageName, httpContextURL string) error {
+	// fulfill if empty
+	if t.bj.APIVersion == "" {
+		t.bj.APIVersion = cbiv1alpha1.SchemeGroupVersion.String()
+	}
+	if t.bj.Kind == "" {
+		t.bj.Kind = "BuildJob"
+	}
+	if t.bj.ObjectMeta.Name == "" {
+		t.bj.ObjectMeta.Name = fmt.Sprintf("skaffold-%d-%s", time.Now().UnixNano(), util.RandomID()[0:1])
+	}
+	if t.bj.Spec.Language.Kind == "" {
+		t.bj.Spec.Language.Kind = cbiv1alpha1.LanguageKindDockerfile
+	}
+	// override
+	t.bj.Spec.Registry.Target = imageName
+	t.bj.Spec.Registry.Push = true
+	t.bj.Spec.Context.Kind = cbiv1alpha1.ContextKindHTTP
+	t.bj.Spec.Context.HTTP = cbiv1alpha1.HTTP{}
+	t.bj.Spec.Context.HTTP.URL = httpContextURL
+	return nil
 }
 
 // DeployConfig contains all the configuration needed by the deploy steps
@@ -146,6 +262,7 @@ type Profile struct {
 type ArtifactType struct {
 	DockerArtifact *DockerArtifact `yaml:"docker"`
 	BazelArtifact  *BazelArtifact  `yaml:"bazel"`
+	S2IArtifact    *BazelArtifact  `yaml:"s2i"`
 }
 
 type DockerArtifact struct {
@@ -155,6 +272,9 @@ type DockerArtifact struct {
 
 type BazelArtifact struct {
 	BuildTarget string `yaml:"target"`
+}
+
+type S2IArtifact struct {
 }
 
 // Parse reads a SkaffoldConfig from yaml.

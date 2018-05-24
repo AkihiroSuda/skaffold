@@ -31,13 +31,29 @@ func CreateTar(w io.Writer, root string, paths []string) error {
 	tw := tar.NewWriter(w)
 	defer tw.Close()
 
-	for _, p := range paths {
-		tarPath := filepath.ToSlash(filepath.Join(root, p))
-
-		if err := addFileToTar(tarPath, p, tw); err != nil {
-			return err
+	if len(paths) == 0 {
+		if walkErr := filepath.Walk(root, func(fpath string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			tarPath := filepath.ToSlash(fpath)
+			if err := addFileToTar(tarPath, fpath, tw); err != nil {
+				return err
+			}
+			return nil
+		}); walkErr != nil {
+			return walkErr
 		}
 
+	} else {
+		for _, p := range paths {
+			tarPath := filepath.ToSlash(filepath.Join(root, p))
+
+			if err := addFileToTar(tarPath, p, tw); err != nil {
+				return err
+			}
+
+		}
 	}
 	return nil
 }

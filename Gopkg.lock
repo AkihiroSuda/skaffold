@@ -48,6 +48,18 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/containerbuilding/cbi"
+  packages = [
+    "pkg/apis/cbi",
+    "pkg/apis/cbi/v1alpha1",
+    "pkg/client/clientset/versioned",
+    "pkg/client/clientset/versioned/scheme",
+    "pkg/client/clientset/versioned/typed/cbi/v1alpha1"
+  ]
+  revision = "af886cc15fa6d804849b74831c2aecb96a030a00"
+
+[[projects]]
+  branch = "master"
   name = "github.com/containerd/continuity"
   packages = ["pathdriver"]
   revision = "d8fb8589b0e8e85b8c8bbaa8840226d0dfeb7371"
@@ -867,6 +879,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "84d525d7b600b63fd98d73cf1c581363781c528d0915a08f045500dc865d5c7c"
+  inputs-digest = "b6f8e3723487f47a83b976aded0bc97f454625c2ce4cf9d19ee2087eef3ca2a4"
   solver-name = "gps-cdcl"
   solver-version = 1

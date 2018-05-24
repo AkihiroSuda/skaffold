@@ -71,3 +71,7 @@
   name = "github.com/google/go-containerregistry"
   revision = "7da7957aee21f95e68545e1ae235654daec23c89"
 
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/containerbuilding/cbi"

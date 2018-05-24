@@ -12,3 +12,13 @@ profiles:
     build:
       googleCloudBuild:
         projectId: k8s-skaffold
+  - name: cbi
+    build:
+      cbi:
+        buildJobTemplate:
+          spec:
+            registry:
+              secretRef:
+                name: my-docker-registry-credential
+            pluginSelector: "plugin.name=buildkit"
+# supported plugins for Dockerfile: docker,buildkit,buildah,kaniko,img,gcb

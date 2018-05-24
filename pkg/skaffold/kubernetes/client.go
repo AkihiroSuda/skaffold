@@ -21,17 +21,26 @@ import (
 
 	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
+	rest "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	// Initialize all known client auth plugins
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
-func GetClientset() (kubernetes.Interface, error) {
+func GetClientConfig() (*rest.Config, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
 	clientConfig, err := kubeConfig.ClientConfig()
 	if err != nil {
 		return nil, fmt.Errorf("Error creating kubeConfig: %s", err)
+	}
+	return clientConfig, nil
+}
+
+func GetClientset() (kubernetes.Interface, error) {
+	clientConfig, err := GetClientConfig()
+	if err != nil {
+		return nil, err
 	}
 	client, err := kubernetes.NewForConfig(clientConfig)
 	if err != nil {

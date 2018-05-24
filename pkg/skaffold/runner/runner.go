@@ -109,6 +109,10 @@ func getBuilder(cfg *v1alpha2.BuildConfig, kubeContext string) (build.Builder, e
 		logrus.Debugf("Using builder: kaniko")
 		return build.NewKanikoBuilder(cfg)
 	}
+	if cfg.CBIBuild != nil {
+		logrus.Debugf("Using builder: cbi")
+		return build.NewCBIBuilder(cfg)
+	}
 
 	return nil, fmt.Errorf("Unknown builder for config %+v", cfg)
 }

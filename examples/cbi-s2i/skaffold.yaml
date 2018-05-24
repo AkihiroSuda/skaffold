@@ -1,0 +1,21 @@
+apiVersion: skaffold/v1alpha2
+kind: Config
+build:
+  artifacts:
+  - imageName: gcr.io/k8s-skaffold/skaffold-example
+    workspace: .
+    s2i: {}
+  cbi:
+    buildJobTemplate:
+      spec:
+        registry:
+          secretRef:
+            name: my-docker-registry-credential
+        language:
+          kind: S2I
+          s2i:
+            baseImage: centos/python-36-centos7
+deploy:
+  kubectl:
+    manifests:
+      - ../getting-started/k8s-*
